@@ -34,7 +34,7 @@ class SERPAnalyzer:
         
         try:
             response = requests.post(self.keyword_data_url, headers=self.headers, json=payload, timeout=60)
-            response.raise_for_status()  # Lève une exception pour les codes d'erreur HTTP
+            response.raise_for_status()
             data = response.json()
             
             if 'tasks' in data and data['tasks'][0]['status_code'] == 20000:
@@ -68,11 +68,8 @@ class SERPAnalyzer:
                         urls.add(clean_url)
                 return urls
             else:
-                # Ne pas afficher d'erreur pour un seul mot-clé, mais le logger en silence
-                # st.warning(f"Impossible de récupérer la SERP pour '{keyword}': {data.get('tasks', [{}])[0].get('status_message', 'Erreur')}")
                 return set()
         except requests.exceptions.RequestException:
-            # st.warning(f"Erreur de requête pour la SERP de '{keyword}': {e}")
             return set()
 
     def calculate_url_similarity(self, keywords: List[str], progress_bar) -> pd.DataFrame:
@@ -84,7 +81,7 @@ class SERPAnalyzer:
             urls = self.get_serp_urls(keyword)
             if urls:
                 keyword_urls[keyword] = urls
-            time.sleep(0.5) # Petite pause pour ne pas surcharger l'API
+            time.sleep(0.5)
             progress_bar.progress(i / total_keywords, text=f"Analyse SERP : {keyword} ({i}/{total_keywords})")
 
         similarity_matrix = []
@@ -181,48 +178,35 @@ st.markdown("""
     Il vous aide à regrouper les mots-clés qui peuvent être ciblés par une seule et même page (clustering sémantique).
 """)
 
-# --- Panneau de configuration dans la barre latérale ---
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    
-    st.markdown("""
-    Pour une utilisation sécurisée, en particulier lors du déploiement,
-    veuillez stocker vos identifiants dans les "Secrets" de Streamlit.
-    """)
+# --- Récupération des identifiants depuis les secrets ---
+login = st.secrets.get("DATAFORSEO_LOGIN")
+password = st.secrets.get("DATAFORSEO_PASSWORD")
 
-    login = st.text_input(
-        "Login DataForSEO",
-        value=st.secrets.get("DATAFORSEO_LOGIN", ""),
-        help="Votre email d'identification pour DataForSEO."
-    )
-    password = st.text_input(
-        "Mot de passe DataForSEO",
-        type="password",
-        value=st.secrets.get("DATAFORSEO_PASSWORD", ""),
-        help="Votre mot de passe API de DataForSEO."
-    )
-
+# --- Vérification de la présence des secrets ---
+if not login or not password:
+    st.error("🔑 ERREUR : Les identifiants DataForSEO ne sont pas configurés.")
     st.info("""
-    **Pour le déploiement sur Streamlit Cloud :**
-    1. Dans votre repo GitHub, créez un dossier `.streamlit`.
-    2. Dans ce dossier, créez un fichier `secrets.toml`.
-    3. Ajoutez-y vos identifiants comme ceci :
-    ```toml
-    DATAFORSEO_LOGIN = "votre_login@email.com"
-    DATAFORSEO_PASSWORD = "votre_mot_de_passe_api"
-    ```
+        Veuillez les ajouter dans les "Secrets" de votre application Streamlit.
+        Créez un fichier `.streamlit/secrets.toml` dans votre dépôt GitHub avec le contenu suivant :
+        ```toml
+        DATAFORSEO_LOGIN = "votre_login@email.com"
+        DATAFORSEO_PASSWORD = "votre_mot_de_passe_api"
+        ```
     """)
+    st.stop() # Arrête l'exécution de l'application si les secrets sont manquants
 
-    st.markdown("---")
-    
-    st.subheader("🔧 Paramètres d'analyse")
+# --- Définition des paramètres ---
+st.subheader("1. Définissez vos paramètres")
+col1, col2 = st.columns(2)
+with col1:
     similarity_threshold = st.slider(
         "Seuil de similarité pour le clustering (%)",
         min_value=0, max_value=100, value=40, step=5,
         help="Pourcentage d'URLs communes nécessaire pour que deux mots-clés soient dans le même cluster."
     )
 
-st.subheader("📋 1. Collez votre liste de mots-clés")
+# --- Saisie des mots-clés ---
+st.subheader("2. Collez votre liste de mots-clés")
 keywords_input = st.text_area(
     "Un mot-clé par ligne.",
     height=250,
@@ -233,9 +217,7 @@ keywords_input = st.text_area(
 if st.button("Lancer l'analyse", type="primary"):
     keywords = [line.strip() for line in keywords_input.split('\n') if line.strip()]
 
-    if not login or not password:
-        st.error("Veuillez entrer votre login et mot de passe DataForSEO dans la barre latérale.")
-    elif not keywords:
+    if not keywords:
         st.warning("Veuillez entrer au moins un mot-clé.")
     else:
         try:
@@ -253,7 +235,7 @@ if st.button("Lancer l'analyse", type="primary"):
             
             progress_bar.empty()
 
-            st.subheader("📊 2. Résultats de l'analyse")
+            st.subheader("📊 3. Résultats de l'analyse")
             
             st.markdown(f"#### Clusters de mots-clés (similarité ≥ {similarity_threshold}%)")
             clusters = analyzer.suggest_keyword_clusters(similarity_df, threshold=similarity_threshold)
@@ -277,9 +259,10 @@ if st.button("Lancer l'analyse", type="primary"):
                 st.dataframe(clusters_display_df, use_container_width=True)
 
             with st.expander("Voir la matrice de similarité détaillée (%)"):
+                # Le style .background_gradient nécessite matplotlib
                 st.dataframe(similarity_df.style.format("{:.1f}").background_gradient(cmap='Greens', vmin=0, vmax=100))
 
-            st.subheader("📥 3. Télécharger le rapport complet")
+            st.subheader("📥 4. Télécharger le rapport complet")
             excel_data = to_excel(similarity_df, clusters, search_volumes)
             st.download_button(
                 label="Télécharger le fichier Excel",
